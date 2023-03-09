@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.nd.erp.mapper.StaffMapper">
+<!-- 사원 번호를 조회해서 사원을 반환한다. -->
+	<select id="selectStaffByStaffNo" resultType="staff">
+		select staff_no, staff_name, jumin_no, school_code, department_code, graduate_day
+		from staff
+		where staff_no = #{staffNo} 
+	</select>
+	
+<!-- 사원의 주민번호가 있는지 조회 후 있다면 사원 번호를 반환한다. -->
+	<select id="selectStaffByJuminNo" resultType="staff">
+		select staff_no
+		from staff
+		where jumin_no=#{juminNo}
+	</select>
+	
+<!-- 스킬 이름을 조회 후 스킬 코드를 반환한다. -->	
+	<select id="selectSkillBySkillName" resultType="codeSkill">
+		select *
+		from code_skill
+		where lower(skill_name) = lower(#{skillName})
+	</select>
+
+<!-- 사원 번호를 조회 후 사원의 스킬을 반환한다. -->
+	<select id="selectStaffSkillByStaffNo" resultType="hashMap">
+		select staff_skill.skill_code, skill_name
+		from staff_skill join code_skill on staff_skill.skill_code = code_skill.skill_code
+		where staff_no = #{staffNo}
+	</select>
+
+<!-- 페이지 값으로 사원을 조회하여 페이지에 맞는 모든 사원을 반환한다. -->
+	<select id="selectAllStaff" resultType="hashMap">
+		select 
+			distinct staff.staff_no staffNo,
+			staff_name staffName, 
+			decode(substr(jumin_no, 8, 1), '1', '남', '2', '여', '3', '남', '4', '여') gender,
+			staff.department_code departmentCode,
+			graduate_day graduateDay 
+       	from staff left join staff_skill on staff.staff_no = staff_skill.staff_no
+			left join code_skill on staff_skill.skill_code = code_skill.skill_code
+		<if test="order == 0">
+			order by 1 DESC
+		</if>
+		<if test="6 > orderItem and orderItem > 0">
+			order by ${orderItem} <if test="order == 2">DESC</if> 
+		</if>
+		<if test="pagination.firstRecordIndex != null and pagination.lastRecordIndex != null">
+			offset #{pagination.firstRecordIndex} - 1 rows fetch next 5 rows only
+		</if>
+	</select>
+	
+<!-- 검색 조건과 페이지 값으로 사원을 조회하여 페이지에 맞는 검색 결과를 반환한다. -->	
+	<select id="selectStaff" resultType="hashMap">
+		select 
+		    row_num,
+		    staffNo,
+		    staffName, 
+		    gender,
+		    departmentCode,
+		    graduateDay 
+		from (
+			select ROWNUM as row_num, staffNo, staffName, gender, departmentCode, graduateDay
+			from (
+				select 
+		            distinct staff.staff_no staffNo,
+		            staff_name staffName, 
+		            decode(substr(jumin_no, 8, 1), '1', '남', '2', '여', '3', '남', '4', '여') gender,
+		            staff.department_code departmentCode,
+		            graduate_day graduateDay 
+		        from staff left join staff_skill on staff.staff_no = staff_skill.staff_no
+		            left join code_skill on staff_skill.skill_code = code_skill.skill_code
+				where 1=1
+				<if test="staffName != ''">
+					and staff_name like '%'||#{staffName}||'%'
+				</if>
+				<if test="department != null">
+					and department_code = #{department}
+				</if>
+				<if test="graduateStart != null and graduateEnd != null">
+					and graduate_day between #{graduateStart} and #{graduateEnd}
+				</if>
+				<if test="genderList.size == 1">
+					and decode(substr(jumin_no, 8, 1), '1', '남', '2', '여', '3', '남', '4', '여') = #{genderList[0]}
+				</if>
+				<if test="graduateList.size > 0">
+					and school_code in 
+						<foreach collection="graduateList" item="item" index="index" separator="," open="(" close=")">
+							#{item}
+						</foreach>
+				</if>
+				<if test="addSkillLogic == 'and' || addSkillLogic == '' || addSkillLogic == null">
+					<if test="skillList.size > 0">
+						<foreach collection="skillList" item="item" index="index" separator="" open="" close="">
+							and (select staff_no
+								from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+								where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+						</foreach>
+					</if>
+					<if test="addSkillList.size > 0">
+						<foreach collection="addSkillList" item="item" index="index" separator="" open="" close="">
+							and (select staff_no
+								from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+								where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+						</foreach>
+					</if>	
+				</if>
+				<if test="addSkillLogic == 'or'">
+					<if test="skillList.size > 0">
+						<foreach collection="skillList" item="item" index="index" separator="" open="" close="">
+							and (select staff_no
+								from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+								where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+						</foreach>
+					</if>
+					<if test="skillList.size > 0 or addSkillList.size > 0">
+						or (
+							<if test="skillList.size > 0">
+								<foreach collection="skillList" item="item" index="index" separator="and" open="" close="">
+									(select staff_no
+										from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+										where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+								</foreach>
+								<if test="addSkillList.size > 0">
+									and
+								</if>
+							</if>
+							<if test="addSkillList.size > 0">
+								LOWER(skill_name) in
+								<foreach collection="addSkillList" item="item" index="index" separator="," open="(" close=")">
+									LOWER(#{item})
+								</foreach>
+							</if>					
+						)
+					</if>
+				</if>
+			<if test="order == 0">
+				order by 1 DESC
+			</if>
+			<if test="6 > orderItem and orderItem > 0">
+				order by ${orderItem} <if test="order == 2">DESC</if>
+			</if>
+			)
+		)
+		<if test="pagination.firstRecordIndex != null and pagination.lastRecordIndex != null">
+			where row_num between #{pagination.firstRecordIndex} and #{pagination.lastRecordIndex}
+		</if>
+	</select>
+
+<!-- 모든 사원의 수를 반환한다. -->
+	<select id="staffAllCount" resultType="int">
+		select count(*)
+		from staff
+	</select>
+
+<!-- 검색 조건에 맞는 사원의 수를 반환한다. -->
+	<select id="staffCount" resultType="int">
+		select count(distinct staff.staff_no)
+		from staff left join staff_skill on staff.staff_no = staff_skill.staff_no
+			left join code_skill on staff_skill.skill_code = code_skill.skill_code
+		where staff_name like '%'||#{staffName}||'%'
+       	<if test="department != null">
+       		and department_code = #{department}
+       	</if>
+		<if test="graduateStart != null and graduateEnd != null">
+			and graduate_day between #{graduateStart} and #{graduateEnd}
+		</if>
+       	<if test="genderList.size == 1">
+           	and decode(substr(jumin_no, 8, 1), '1', '남', '2', '여', '3', '남', '4', '여') = #{genderList[0]}
+           </if>
+		<if test="graduateList.size != 0">
+			and school_code in
+			<foreach collection="graduateList" item="item" index="index" separator="," open="(" close=")">
+				#{item}
+			</foreach>
+        </if>
+        <if test="addSkillLogic == 'and' || addSkillLogic == '' || addSkillLogic == null">
+			<if test="skillList.size > 0">
+				<foreach collection="skillList" item="item" index="index" separator="" open="" close="">
+					and (select staff_no
+						from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+						where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+				</foreach>
+			</if>
+			<if test="addSkillList.size > 0">
+				<foreach collection="addSkillList" item="item" index="index" separator="" open="" close="">
+					and (select staff_no
+						from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+						where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+				</foreach>
+			</if>	
+		</if>
+		<if test="addSkillLogic == 'or'">
+			<if test="skillList.size > 0">
+				<foreach collection="skillList" item="item" index="index" separator="" open="" close="">
+					and (select staff_no
+						from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+						where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+				</foreach>
+			</if>
+			<if test="skillList.size > 0 or addSkillList.size > 0">
+				or (
+					<if test="skillList.size > 0">
+						<foreach collection="skillList" item="item" index="index" separator="and" open="" close="">
+							(select staff_no
+								from staff_skill left join code_skill on staff_skill.skill_code = code_skill.skill_code
+								where lower(skill_name) = lower(#{item}) and staff_no = staff.staff_no) = staff.staff_no
+						</foreach>
+						<if test="addSkillList.size > 0">
+							and
+						</if>
+					</if>
+					<if test="addSkillList.size > 0">
+						LOWER(skill_name) in
+						<foreach collection="addSkillList" item="item" index="index" separator="," open="(" close=")">
+							LOWER(#{item})
+						</foreach>
+					</if>					
+				)
+			</if>
+		</if>
+	</select>
+
+<!-- 사원을 추가한다. -->
+	<insert id="insertStaff" parameterType="hashMap">
+		<selectKey keyProperty="staffNo" resultType="int" order="AFTER">
+			select staff_seq.currval from dual
+		</selectKey>
+		insert into staff(staff_no, staff_name, jumin_no, school_code, department_code, graduate_day)
+		values(staff_seq.nextval, #{staffName, jdbcType=VARCHAR}, #{juminNo, jdbcType=VARCHAR}, #{schoolCode, jdbcType=INTEGER}, #{departmentCode, jdbcType=INTEGER}, #{graduateDay, jdbcType=VARCHAR})
+	</insert>
+	
+<!-- 스킬을 추가한다. -->
+	<insert id="insertSkill" parameterType="codeSkill">
+		<selectKey keyProperty="skillCode" resultType="int" order="AFTER">
+			select code_skill_seq.currval from dual
+		</selectKey>
+		insert into code_skill(skill_code, skill_name)
+		values(code_skill_seq.nextval, #{skillName, jdbcType=VARCHAR})
+	</insert>
+
+<!-- 사원의 스킬을 추가한다. -->	
+	<insert id="insertStaffSkill" parameterType="hashMap">
+		insert into staff_skill(staff_skill_no, staff_no, skill_code)
+		select staff_skill_seq.nextval, A.* 
+		from (
+		<foreach collection="skillNo" item="item" separator="UNION ALL ">
+			select #{staffNo} as staff_no, #{item} as skill_code
+			from dual
+		</foreach>
+		) A
+	</insert>
+
+<!-- 사원을 업데이트한다. -->
+	<update id="updateStaff" parameterType="hashMap">
+		update staff
+		set 
+			staff_name = #{staffName, jdbcType=VARCHAR}, 
+			jumin_no = #{juminNo, jdbcType=VARCHAR}, 
+			department_code = #{departmentCode, jdbcType=INTEGER}, 
+			school_code = #{schoolCode, jdbcType=INTEGER}, 
+			graduate_day = #{graduateDay, jdbcType=VARCHAR}
+		where staff_no = #{staffNo, jdbcType=INTEGER}
+	</update>
+
+<!-- 사원을 삭제한다. -->
+	<delete id="deleteStaff">
+		delete from staff 
+		where staff_no = #{staffNo}
+	</delete>
+
+<!-- 사원의 스킬을 삭제한다. -->
+	<delete id="deleteStaffSkill">
+		delete from staff_skill
+		where staff_no = #{staffNo}
+	</delete>
+</mapper>
